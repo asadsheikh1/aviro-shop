@@ -78,9 +78,20 @@ def fulfilled_within(order_id: str, seconds: float) -> bool:
     return False
 
 
-def concurrent_status_codes(path: str, n: int = 60) -> list[int]:
+def concurrent_checkouts(n: int = 60) -> list[int]:
+    """Many checkouts at once: each holds a DB connection for a multi-statement
+    reservation transaction, which is where a too-small pool shows up."""
+
+    def one(_: int) -> int:
+        body = {
+            "customer_email": "load@example.com",
+            "items": [{"sku": "KB-101", "qty": 1}, {"sku": "MS-202", "qty": 1}],
+            "card_token": f"tok_visa_{uuid.uuid4().hex[:8]}",
+        }
+        return httpx.post(URL + "/api/orders", json=body, timeout=30).status_code
+
     with cf.ThreadPoolExecutor(max_workers=30) as pool:
-        return list(pool.map(lambda _: httpx.get(URL + path, timeout=30).status_code, range(n)))
+        return list(pool.map(one, range(n)))
 
 
 # ------------------------------------------------------------------ checks
@@ -131,15 +142,19 @@ def s02_fix() -> tuple[bool, str]:
 
 
 def s03_bad() -> tuple[bool, str]:
-    codes = concurrent_status_codes("/api/products")
+    codes = concurrent_checkouts()
     errors = sum(c >= 500 for c in codes)
-    return errors > 0, f"{errors}/{len(codes)} concurrent requests failed (pool exhausted)"
+    pool_errors = "PoolTimeout" in logs("inventory") or "PoolTimeout" in logs("orders")
+    return (
+        errors > 0 and pool_errors,
+        f"{errors}/{len(codes)} concurrent checkouts failed; PoolTimeout logged: {pool_errors}",
+    )
 
 
 def s03_fix() -> tuple[bool, str]:
-    codes = concurrent_status_codes("/api/products")
+    codes = concurrent_checkouts()
     errors = sum(c >= 500 for c in codes)
-    return errors == 0, f"{errors}/{len(codes)} concurrent requests failed"
+    return errors == 0, f"{errors}/{len(codes)} concurrent checkouts failed"
 
 
 def s04_bad() -> tuple[bool, str]:
