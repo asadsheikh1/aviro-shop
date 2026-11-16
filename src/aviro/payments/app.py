@@ -1,4 +1,7 @@
-"""payments: card charges (simulated card network)."""
+"""payments: card charges (simulated card network).
+
+Charges are idempotent per order at the card network; we record every attempt.
+"""
 
 import uuid
 from typing import Any
