@@ -1,0 +1,136 @@
+# AVIRO local stack. Use the Makefile (`make up`), which builds and force-recreates.
+# Only the gateway is published (127.0.0.1:8080). Everything else is internal.
+name: aviro
+
+x-otel: &otel
+  # Standard OTel SDK env vars. Exporters are "none" until you point them somewhere:
+  #   make up-otel                      → local debug collector (prints what it receives)
+  #   OTEL_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.<sentinel>  make up
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-debug:4318}
+  OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+  OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+  OTEL_TRACES_EXPORTER: ${OTEL_EXPORTER:-none}
+  OTEL_METRICS_EXPORTER: ${OTEL_EXPORTER:-none}
+  OTEL_LOGS_EXPORTER: ${OTEL_EXPORTER:-none}
+  OTEL_METRIC_EXPORT_INTERVAL: "15000"
+  OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
+  OTEL_PYTHON_LOG_CORRELATION: "true"
+
+x-app: &app
+  image: ${AVIRO_IMAGE:-localhost/aviro:dev}
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp"]
+  depends_on:
+    postgres: { condition: service_healthy }
+    valkey: { condition: service_healthy }
+
+x-app-env: &app-env
+  AVIRO_DATABASE_URL: postgresql://aviro:${POSTGRES_PASSWORD:-aviro-dev-only}@postgres:5432/aviro
+  AVIRO_BROKER_URL: redis://valkey:6379/0
+  AVIRO_ADMIN_TOKEN: ${AVIRO_ADMIN_TOKEN:-aviro-admin-dev-only}
+  AVIRO_LOG_LEVEL: INFO
+
+services:
+  postgres:
+    image: docker.io/library/postgres:17.12-alpine
+    environment:
+      POSTGRES_USER: aviro
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aviro-dev-only}
+      POSTGRES_DB: aviro
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro,Z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aviro -d aviro"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  valkey:
+    image: docker.io/valkey/valkey:8.1.11-alpine
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  inventory:
+    <<: *app
+    build: { context: ., dockerfile: Containerfile }
+    command: ["opentelemetry-instrument", "uvicorn", "aviro.inventory.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: [*otel, *app-env]
+      AVIRO_SERVICE: inventory
+      OTEL_SERVICE_NAME: inventory
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=aviro,deployment.environment=${AVIRO_ENV:-dev},service.version=${AVIRO_VERSION:-dev}
+    mem_limit: 300m   # so a memory leak ends in a real OOM kill + restart (S06)
+
+  payments:
+    <<: *app
+    command: ["opentelemetry-instrument", "uvicorn", "aviro.payments.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: [*otel, *app-env]
+      AVIRO_SERVICE: payments
+      OTEL_SERVICE_NAME: payments
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=aviro,deployment.environment=${AVIRO_ENV:-dev},service.version=${AVIRO_VERSION:-dev}
+
+  orders:
+    <<: *app
+    command: ["opentelemetry-instrument", "uvicorn", "aviro.orders.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: [*otel, *app-env]
+      AVIRO_SERVICE: orders
+      OTEL_SERVICE_NAME: orders
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=aviro,deployment.environment=${AVIRO_ENV:-dev},service.version=${AVIRO_VERSION:-dev}
+    # Receipts are written here. A small tmpfs means disk_fill really fills it (ENOSPC).
+    tmpfs: ["/tmp", "/data:size=200m,mode=1777"]
+
+  worker:
+    <<: *app
+    command: ["opentelemetry-instrument", "celery", "-A", "aviro.worker.tasks", "worker", "--pool", "threads", "--concurrency", "4", "--loglevel", "INFO"]
+    environment:
+      <<: [*otel, *app-env]
+      AVIRO_SERVICE: worker
+      OTEL_SERVICE_NAME: worker
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=aviro,deployment.environment=${AVIRO_ENV:-dev},service.version=${AVIRO_VERSION:-dev}
+
+  gateway:
+    <<: *app
+    environment:
+      <<: [*otel, *app-env]
+      AVIRO_SERVICE: gateway
+      OTEL_SERVICE_NAME: gateway
+      OTEL_RESOURCE_ATTRIBUTES: service.namespace=aviro,deployment.environment=${AVIRO_ENV:-dev},service.version=${AVIRO_VERSION:-dev}
+    ports:
+      - "127.0.0.1:8080:8000"
+    depends_on:
+      inventory: { condition: service_started }
+      payments: { condition: service_started }
+      orders: { condition: service_started }
+
+  # Optional: proves telemetry leaves the services (make up-otel / make otel-logs).
+  otel-debug:
+    image: docker.io/otel/opentelemetry-collector-contrib:0.165.0
+    profiles: ["otel"]
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel/debug-collector.yaml:/etc/otelcol/config.yaml:ro,Z
+
+  # Optional: synthetic shoppers (make load).
+  loadgen:
+    image: docker.io/locustio/locust:2.47.0
+    profiles: ["load"]
+    command: ["-f", "/mnt/locustfile.py", "--headless", "--host", "http://gateway:8000",
+              "-u", "${LOAD_USERS:-10}", "-r", "${LOAD_SPAWN_RATE:-2}", "--run-time", "${LOAD_DURATION:-10m}"]
+    volumes:
+      - ./loadgen/locustfile.py:/mnt/locustfile.py:ro,Z
+    depends_on:
+      gateway: { condition: service_started }
+
+volumes:
+  pgdata:

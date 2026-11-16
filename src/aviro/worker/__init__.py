@@ -1,0 +1,1 @@
+"""AVIRO worker."""
