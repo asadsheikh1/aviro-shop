@@ -128,7 +128,7 @@ async def get_order(order_id: uuid.UUID, request: Request) -> dict[str, Any]:
         "order_id": str(order["id"]),
         "status": order["status"],
         "total_cents": order["total_cents"],
-        "shipping_method": order["shipping_method"],
+        "shipping_method": order.get("shipping_method", "standard"),
         "items": items,
         "created_at": order["created_at"].isoformat(),
         "fulfilled_at": order["fulfilled_at"].isoformat() if order["fulfilled_at"] else None,
