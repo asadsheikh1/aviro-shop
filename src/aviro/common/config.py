@@ -14,8 +14,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql://aviro:aviro-dev-only@localhost:5432/aviro"
     db_pool_min: int = Field(default=1, ge=0)
-    db_pool_max: int = Field(default=10, ge=1)
-    db_pool_timeout_s: float = 2.0
+    db_pool_max: int = Field(default=1, ge=1)
+    db_pool_timeout_s: float = 0.05
     db_statement_timeout_ms: int = 2000
 
     broker_url: str = "redis://localhost:6379/0"
