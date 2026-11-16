@@ -47,6 +47,7 @@ select = ["E", "W", "F", "I", "B", "UP", "S", "SIM", "RUF", "ASYNC", "PT", "C4"]
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "S105", "S106", "S311", "S603", "S607"]  # tests shell out to podman
 "loadgen/**" = ["S311"]
+"scripts/**" = ["S603", "S607"]  # dev scripts call git/podman with fixed argv
 
 [tool.mypy]
 python_version = "3.12"

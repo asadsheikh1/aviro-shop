@@ -28,10 +28,12 @@ jobs:
       - run: uv run pytest
 
   stack:
-    name: full stack + every fault reproduces (rootless Podman)
+    name: full stack + every fault and scenario reproduces (rootless Podman)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # scenario tags and history are needed for deploys
       - uses: astral-sh/setup-uv@v10.3.3
         with:
           version: "0.13.8"
@@ -55,6 +57,14 @@ jobs:
         env:
           AVIRO_REQUIRE_OTEL: "1"
         run: uv run pytest -m smoke -v
+      - name: Code-fault scenarios (deploy each bad and fix tag, check symptom)
+        run: |
+          git fetch --tags --force
+          if git tag -l 'scenario/*' | grep -q .; then
+            uv run python scripts/verify_scenarios.py
+          else
+            echo "::warning::no scenario tags found; skipping"
+          fi
       - name: Logs on failure
         if: failure()
         run: |
