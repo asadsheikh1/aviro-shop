@@ -44,15 +44,8 @@ def _public(p: dict[str, Any]) -> dict[str, Any]:
 
 @router.get("/products")
 async def list_products(request: Request, limit: int = 50) -> list[dict[str, Any]]:
-    db = _db(request)
-    skus = await db.fetch_all("SELECT sku FROM products ORDER BY sku LIMIT %s", (min(limit, 200),))
-    out = []
-    for r in skus:
-        product = await db.fetch_one("SELECT * FROM products WHERE sku = %s", (r["sku"],))
-        level = await db.fetch_one("SELECT stock FROM products WHERE sku = %s", (r["sku"],))
-        if product and level:
-            out.append({**_public(product), "stock_level": "low" if level["stock"] < 10 else "ok"})
-    return out
+    rows = await _db(request).fetch_all("SELECT * FROM products ORDER BY sku LIMIT %s", (min(limit, 200),))
+    return [{**_public(r), "stock_level": "low" if r["stock"] < 10 else "ok"} for r in rows]
 
 
 @router.get("/products/{sku}")
