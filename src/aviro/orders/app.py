@@ -106,7 +106,7 @@ async def create_order(body: OrderRequest, request: Request) -> dict[str, Any]:
     await asyncio.to_thread(
         state.celery.send_task,
         FULFIL_TASK,
-        kwargs={"order_id": str(order_id), "customer_email": body.customer_email},
+        kwargs={"order": {**order, "customer_email": body.customer_email}},
         retry=True,
         retry_policy={"max_retries": 2, "interval_start": 0, "interval_step": 0.2},
     )
