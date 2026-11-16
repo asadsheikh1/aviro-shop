@@ -43,8 +43,20 @@ def _connect() -> psycopg.Connection[Any]:
 
 
 @celery.task(name="aviro.fulfil_order", bind=True, max_retries=3, default_retry_delay=2)
-def fulfil_order(self: Any, order_id: str, customer_email: str) -> dict[str, str]:
-    """Pick, pack and "email" the customer. Marks the order fulfilled."""
+def fulfil_order(
+    self: Any,
+    order: dict[str, Any] | None = None,
+    order_id: str | None = None,
+    customer_email: str | None = None,
+) -> dict[str, str]:
+    """Pick, pack and "email" the customer. Marks the order fulfilled.
+
+    Accepts the full ``order`` payload and the older ``order_id`` form.
+    """
+    if order is not None:
+        order_id, customer_email = order["order_id"], order["customer_email"]
+    if order_id is None or customer_email is None:
+        raise ValueError("fulfil_order needs an order")
     time.sleep(0.05)  # pretend to talk to the warehouse
     with _connect() as conn:
         cur = conn.execute(
