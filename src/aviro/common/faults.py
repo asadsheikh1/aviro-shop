@@ -190,18 +190,20 @@ class FaultEngine:
         path = self.data_dir / ".fill"
         block = os.urandom(1024 * 1024)
         written = 0
-        with path.open("ab") as fh:
-            while not fault.stop.wait(1.0 / max(1, int(fault.params["mb_per_s"]))):
-                if written >= int(fault.params["max_mb"]):
-                    continue
-                try:
+        while not fault.stop.wait(1.0 / max(1, int(fault.params["mb_per_s"]))):
+            if written >= int(fault.params["max_mb"]):
+                continue
+            try:
+                # Open per write: no long-lived handle, so clearing the fault
+                # (unlink) frees the space immediately. An open file's space is
+                # only released when its last descriptor closes.
+                with path.open("ab") as fh:
                     fh.write(block)
-                    fh.flush()
-                    written += 1
-                except OSError as e:  # disk full: keep it full until cleared
-                    log.error("disk fill stopped: %s", e)
-                    fault.stop.wait()
-                    return
+                written += 1
+            except OSError as e:  # disk full: keep it full until cleared
+                log.error("disk fill stopped: %s", e)
+                fault.stop.wait()
+                return
 
     def _crash(self, fault: ActiveFault) -> None:
         if fault.stop.wait(float(fault.params["delay_s"])):
