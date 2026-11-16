@@ -18,6 +18,7 @@ ORDER = {
     "customer_email": "a@example.com",
     "items": [{"sku": "KB-101", "qty": 1}],
     "card_token": "tok_visa_1234",
+    "gift_message": "Happy birthday!",
 }
 
 

@@ -59,6 +59,8 @@ def _write_receipt(data_dir: str, order: dict[str, Any]) -> None:
 async def create_order(body: OrderRequest, request: Request) -> dict[str, Any]:
     state = request.app.state
     order_id = uuid.uuid4()
+    raw = await request.json()
+    gift_message = raw["gift_message"].strip()[:200]
     items = [i.model_dump() for i in body.items]
     try:
         reservation = await _call(state.inventory, "POST", "/reservations", {"items": items})
@@ -101,6 +103,7 @@ async def create_order(body: OrderRequest, request: Request) -> dict[str, Any]:
         "status": "paid",
         "total_cents": reserved["total_cents"],
         "items": reserved["items"],
+        "gift_message": gift_message,
     }
     _write_receipt(state.settings.data_dir, order)
     await asyncio.to_thread(
