@@ -15,6 +15,8 @@ x-otel: &otel
   OTEL_METRIC_EXPORT_INTERVAL: "15000"
   OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED: "true"
   OTEL_PYTHON_LOG_CORRELATION: "true"
+  # Stable HTTP semantic conventions (http.server.request.duration, in seconds).
+  OTEL_SEMCONV_STABILITY_OPT_IN: http
 
 x-app: &app
   image: ${AVIRO_IMAGE:-localhost/aviro:dev}

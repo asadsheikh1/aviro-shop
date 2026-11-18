@@ -54,8 +54,16 @@ make otel-logs
 # Send to SENTINEL (or any OTLP endpoint):
 OTEL_EXPORTER=otlp \
 OTEL_EXPORTER_OTLP_ENDPOINT=https://ingest.<your-sentinel> \
-OTEL_EXPORTER_OTLP_HEADERS="authorization=Bearer <ingest-token>" make up
+OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20<ingest-token>" make up
 ```
+
+To onboard AVIRO into a SENTINEL running on the same machine, create an integration in SENTINEL and pass its one-time token:
+
+```bash
+make up-sentinel TOKEN=sit_...
+```
+
+AVIRO joins only SENTINEL's `sentinel-ingest` network, so the authenticated ingest endpoint is the only part of SENTINEL it can reach.
 
 Logs are JSON on stdout with `trace_id` and `span_id`, so they correlate with traces.
 
