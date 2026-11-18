@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 COMPOSE := podman compose
 
-.PHONY: help install lint test up up-otel down reset ps logs otel-logs load load-stop smoke deploy fault
+.PHONY: help install lint test up up-otel up-sentinel down reset ps logs otel-logs load load-stop smoke deploy fault
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -26,8 +26,15 @@ up-otel: ## Same as up, plus a debug OTel collector receiving traces/metrics/log
 	$(COMPOSE) build
 	OTEL_EXPORTER=otlp $(COMPOSE) --profile otel up -d --force-recreate
 
+up-sentinel: ## Send telemetry to SENTINEL: make up-sentinel TOKEN=sit_... (SENTINEL must be running)
+	@test -n "$(TOKEN)" || (echo 'usage: make up-sentinel TOKEN=sit_...'; exit 1)
+	$(COMPOSE) build
+	OTEL_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://ingest.sentinel.internal:4319 \
+	OTEL_EXPORTER_OTLP_HEADERS="Authorization=Bearer%20$(TOKEN)" \
+	$(COMPOSE) -f compose.yaml -f compose.sentinel.yaml up -d --force-recreate
+
 down: ## Stop everything (data kept)
-	$(COMPOSE) --profile otel --profile load down
+	$(COMPOSE) -f compose.yaml -f compose.sentinel.yaml --profile otel --profile load down
 
 reset: ## DELETE the database volume and start fresh
 	$(COMPOSE) --profile otel --profile load down -v

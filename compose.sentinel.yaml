@@ -1,0 +1,15 @@
+# Overlay: connect AVIRO to a SENTINEL running on the same machine (make up-sentinel).
+# AVIRO joins only the ingest network, so it can reach SENTINEL's authenticated
+# ingest endpoint and nothing else: not the Collector, the stores or the API.
+services:
+  gateway: { networks: [default, sentinel-ingest] }
+  inventory: { networks: [default, sentinel-ingest] }
+  payments: { networks: [default, sentinel-ingest] }
+  orders: { networks: [default, sentinel-ingest] }
+  worker: { networks: [default, sentinel-ingest] }
+
+networks:
+  default: {}
+  sentinel-ingest:
+    external: true
+    name: sentinel-ingest
