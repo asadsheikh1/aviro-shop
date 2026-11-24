@@ -35,18 +35,23 @@ image="localhost/aviro:${short}"
 echo "==> building ${image} from ${ref} (${version})"
 git archive --format=tar "$sha" | podman build --quiet --build-arg "AVIRO_VERSION=${version}" -t "$image" -f Containerfile - >/dev/null
 
+# Stamped when the rollout starts: that's when the change begins to take effect
+# (and when its errors can begin). One run = one deployment, even of a commit
+# deployed before, so the run's start time is part of the idempotency key.
+deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+run_id="$(date -u +%Y%m%dT%H%M%SZ)"
+
 echo "==> rolling out"
 AVIRO_IMAGE="$image" AVIRO_VERSION="$version" \
   "${compose[@]}" up -d --force-recreate --no-deps inventory payments orders worker gateway >/dev/null
 
-deployed_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 for service in gateway inventory payments orders worker; do
   event=$(printf '{"service":"%s","version":"%s","image_ref":"%s","commit_sha":"%s","deployed_at":"%s","deployed_by":"%s","source":"script"}' \
     "$service" "$version" "$image" "$sha" "$deployed_at" "${USER:-unknown}")
   if [[ -n "${SENTINEL_DEPLOY_WEBHOOK_URL:-}" && -n "${SENTINEL_API_KEY:-}" ]]; then
     curl -fsS -X POST "$SENTINEL_DEPLOY_WEBHOOK_URL" \
       -H "Content-Type: application/json" -H "X-Sentinel-Key: ${SENTINEL_API_KEY}" \
-      -H "Idempotency-Key: deploy-${short}-${service}" -d "$event" >/dev/null
+      -H "Idempotency-Key: deploy-${short}-${service}-${run_id}" -d "$event" >/dev/null
     echo "    event sent: ${service}"
   else
     echo "    deployment event (SENTINEL webhook not configured): ${event}"
