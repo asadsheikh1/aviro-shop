@@ -1,4 +1,5 @@
-"""Synthetic shoppers: browse the catalogue, look at products, sometimes buy.
+"""Synthetic shoppers: browse the catalogue, look at products, sometimes buy
+and then check the order's status.
 
 Runs in the official Locust image (`make load`). Tune with LOAD_USERS,
 LOAD_SPAWN_RATE and LOAD_DURATION. About 2% of checkouts use a card that the
@@ -53,3 +54,8 @@ class Shopper(HttpUser):
         ) as r:
             if r.status_code in (201, 402):  # a declined card is a normal outcome
                 r.success()
+            if r.status_code == 201 and random.random() < 0.5:
+                # Customers check their order's status after buying (needed for S11).
+                order_id = r.json().get("order_id")
+                if order_id:
+                    self.client.get(f"/api/orders/{order_id}", name="/api/orders/[id]")
